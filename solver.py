@@ -1,6 +1,7 @@
 import os
 import time
 import argparse
+from tqdm import tqdm
 from enum import Enum
 from typing import Any
 from playwright.sync_api import sync_playwright
@@ -40,6 +41,10 @@ def main(url: str) -> None:
             page.click("input[type='button'][value='LOGIN'][onclick='loginProc()']")
             page.wait_for_load_state("networkidle")
 
+            print("Login successful.")
+        else:
+            print("Already logged in.")
+
         page.goto(url)
         page.wait_for_load_state("networkidle")
 
@@ -62,6 +67,8 @@ def main(url: str) -> None:
             print("Error: Could not find any questions on the page.")
             browser.close()
             return
+        
+        pbar = tqdm(questions, desc="Processing questions", unit="question")
 
         for index, question in enumerate(questions):
             question_type = question.get_attribute("class")
@@ -81,7 +88,6 @@ def main(url: str) -> None:
                 script.evaluate(f"(element) => element.replaceWith('${math_content}$')")
 
             question_text = qtext_element.inner_text().strip()
-            print(f"Question {index + 1}: {question_text}")
 
             if "essay" in question_type:
                 question_queue.append((index, question_text, QuestionType.ESSAY))
@@ -92,6 +98,9 @@ def main(url: str) -> None:
             else:
                 print(f"Warning: Unrecognized question type for question {index + 1}. Skipping.")
 
+            pbar.update(1)
+        
+        pbar.close()
 
         def solve_essay(question_text: str) -> str:
             prompt = f"Please provide a detailed answer to the following question. Reply in Korean. Do not include any emojis, special characters, or formatting. Just provide answer in plain text.\n\nQuestion: {question_text}"
@@ -117,7 +126,6 @@ def main(url: str) -> None:
                 text_format=TrueFalseAnswer
             )
             return response.output_parsed
-            
         
         def solve_question(question_data: tuple[int, str, QuestionType]) -> tuple[int, QuestionType, Any]:
             index, question_text, qtype = question_data
@@ -144,6 +152,8 @@ def main(url: str) -> None:
                 except Exception as e:
                     print(f"Error solving question {qindex + 1}: {e}")
 
+        pbar = tqdm(solved_answers.items(), desc="Filling answers", unit="question")
+
         for index, qtype_and_answer in solved_answers.items():
             qtype, answer = qtype_and_answer
             question_element = questions[index]
@@ -167,6 +177,12 @@ def main(url: str) -> None:
                     false_radio = question_element.query_selector("input[type='radio'][value='0']")
                     if false_radio:
                         false_radio.check()
+            else:
+                print(f"Warning: Unrecognized question type for question {index + 1}. Skipping filling answer.")
+
+            pbar.update(1)
+        
+        pbar.close()
 
         print("All questions have been processed.")
         
